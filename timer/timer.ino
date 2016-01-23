@@ -47,7 +47,7 @@ class Menu {
   String upper;
   String lower;
   public:
-    Menu(String uppers, String lowers);
+//    Menu(String uppers, String lowers);
     void show();
     void set_text(String uppers, String lowers);
     void up();
@@ -56,10 +56,10 @@ class Menu {
     void right();
 };
 
-Menu::Menu(String uppers, String lowers) {
-  upper = uppers;
-  lower = lowers;
-};
+// Menu::Menu(String uppers, String lowers) {
+//   upper = uppers;
+//   lower = lowers;
+// };
 
 void Menu::show() {
   set_cursor(0, 0);
@@ -81,15 +81,59 @@ void Menu::right() {
   increment_x();
 };
 
-//class Timer {
-//  String upper
-//};
 
-Menu main_menu = Menu("Hej", "Alex");
-Menu timer1 = Menu("Timer 1", "Not Set");
-Menu timer2 = Menu("Timer 2", "Not Set");
-Menu clock_menu = Menu("Set clock time", "HH:MM:SS");
-Menu menus[] = {main_menu, timer1, timer2};
+class TimerMode : public Menu{
+  byte _row;
+  String _name;
+  byte _hour;
+  byte _minute;
+  bool _active;
+  byte _cursor_start;
+
+  public:
+    TimerMode(String name, byte row);
+    void show();
+};
+
+TimerMode::TimerMode(String name, byte row) {
+  _row = row;
+  _name = name;
+  _cursor_start = _name.length() + 2;
+  _active = false;
+  _hour = 0;
+  _minute = 0;
+};
+
+void TimerMode::show() {
+  set_cursor(0, _row);
+  String out_str = _name + " " +
+    pad_number(_hour, "0", 2) + ":" +
+    pad_number(_minute, "0", 2) + active_text(_active);
+  Serial.println(out_str);
+  lcd.print(out_str);
+}
+
+String active_text(bool state){
+  if (state) {
+    return "ON";
+  } else {
+    return "OFF";
+  }
+}
+
+String pad_number(byte number, String padding, byte npads){
+  String padded = "" + number;
+  while (padded.length() < npads) {
+    padded = padding + padded;
+  }
+  return padded;
+}
+
+
+//Menu main_menu = TimerMode("Hej", 0);
+Menu timer1 = TimerMode("Timer 1", 0);
+Menu timer2 = TimerMode("Timer 2", 1);
+Menu menus[] = {timer1, timer2};
 
 
 // Convert normal decimal numbers to binary coded decimal
@@ -263,7 +307,7 @@ void handle_key_press(int lcd_key)
 }
 
 void switch_menu() {
-  current_menu = ++current_menu % 4;
+  current_menu = ++current_menu % 2;
   lcd.clear();
   menus[current_menu].show();
 }
@@ -280,7 +324,7 @@ void setup()
   Serial.begin(9600);
   lcd.begin(16, 2);               // start the library
   set_cursor(0,0);             // set the LCD cursor   position
-  main_menu.show();
+  timer1.show();
   // set the initial time here:
   // DS3231 seconds, minutes, hours, day, date, month, year
   setDS3231time(30,18,16,7,23,1,16);
