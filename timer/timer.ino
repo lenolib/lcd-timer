@@ -4,7 +4,7 @@
 using namespace std;
 
 LiquidCrystal lcd(8, 9, 4, 5, 6, 7);           // select the pins used on the LCD panel
- 
+
 // define some values used by the panel and buttons
 int lcd_key     = 0;
 int adc_key_in  = 0;
@@ -34,7 +34,7 @@ void increment_x() {
   set_cursor((cursor_x + 1) % MAX_X, cursor_y);
 }
 void decrement_x() {
-set_cursor((cursor_x - 1) % MAX_X, cursor_y);
+  set_cursor((cursor_x - 1) % MAX_X, cursor_y);
 }
 void increment_y() {
   set_cursor(cursor_x, (cursor_y + 1) % MAX_Y);
@@ -71,13 +71,13 @@ void Menu::show() {
 void Menu::up() {
   increment_y();
 };
-void Menu::down() {  
+void Menu::down() {
   decrement_y();
 };
-void Menu::left() {  
+void Menu::left() {
   decrement_x();
 };
-void Menu::right() {  
+void Menu::right() {
   increment_x();
 };
 
@@ -120,13 +120,14 @@ dayOfMonth, byte month, byte year)
   Wire.endTransmission();
 }
 
-void readDS3231time(byte *second,
-byte *minute,
-byte *hour,
-byte *dayOfWeek,
-byte *dayOfMonth,
-byte *month,
-byte *year)
+void readDS3231time(
+    byte *second,
+    byte *minute,
+    byte *hour,
+    byte *dayOfWeek,
+    byte *dayOfMonth,
+    byte *month,
+    byte *year)
 {
   Wire.beginTransmission(DS3231_I2C_ADDRESS);
   Wire.write(0); // set DS3231 register pointer to 00h
@@ -196,32 +197,32 @@ void displayTime()
 }
 
 int read_LCD_buttons(){               // read the buttons
-    adc_key_in = analogRead(0);       // read the value from the sensor 
+    adc_key_in = analogRead(0);       // read the value from the sensor
 //    lcd.clear();
 //    lcd.print(adc_key_in);
 //    delay(100);
     // my buttons when read are centered at these valies: 0, 144, 329, 504, 741
     // we add approx 50 to those values and check to see if we are close
     // We make this the 1st option for speed reasons since it will be the most likely result
- 
-    if (adc_key_in > 1000) return btnNONE; 
- 
+
+    if (adc_key_in > 1000) return btnNONE;
+
     // For V1.1 us this threshold
-    if (adc_key_in < 50)   return btnRIGHT;  
-    if (adc_key_in < 150)  return btnUP; 
-    if (adc_key_in < 300)  return btnDOWN; 
-    if (adc_key_in < 450)  return btnLEFT; 
-    if (adc_key_in < 700)  return btnSELECT;  
- 
+    if (adc_key_in < 50)   return btnRIGHT;
+    if (adc_key_in < 150)  return btnUP;
+    if (adc_key_in < 300)  return btnDOWN;
+    if (adc_key_in < 450)  return btnLEFT;
+    if (adc_key_in < 700)  return btnSELECT;
+
    // For V1.0 comment the other threshold and use the one below:
    /*
-     if (adc_key_in < 50)   return btnRIGHT;  
-     if (adc_key_in < 195)  return btnUP; 
-     if (adc_key_in < 380)  return btnDOWN; 
-     if (adc_key_in < 555)  return btnLEFT; 
-     if (adc_key_in < 790)  return btnSELECT;   
+     if (adc_key_in < 50)   return btnRIGHT;
+     if (adc_key_in < 195)  return btnUP;
+     if (adc_key_in < 380)  return btnDOWN;
+     if (adc_key_in < 555)  return btnLEFT;
+     if (adc_key_in < 790)  return btnSELECT;
    */
- 
+
     return btnNONE;                // when all others fail, return this.
 }
 
@@ -237,7 +238,7 @@ void handle_key_press(int lcd_key)
       menus[current_menu].left();
       debounce();
       break;
-    }    
+    }
     case btnUP:{
       menus[current_menu].up();
       debounce();
@@ -250,7 +251,6 @@ void handle_key_press(int lcd_key)
       break;
     }
     case btnSELECT:{
-      lcd.clear();
       switch_menu();
       debounce();
       break;
@@ -263,13 +263,14 @@ void handle_key_press(int lcd_key)
 }
 
 void switch_menu() {
-  current_menu++;
-  current_menu = current_menu % 4;
+  current_menu = ++current_menu % 4;
+  lcd.clear();
   menus[current_menu].show();
 }
 
 void debounce() {
-  while(analogRead(0) < 1000) {    
+  while(analogRead(0) < 1000) {
+    //keep looping until released
   }
 }
 
@@ -278,7 +279,7 @@ void setup()
   Wire.begin();
   Serial.begin(9600);
   lcd.begin(16, 2);               // start the library
-  set_cursor(0,0);             // set the LCD cursor   position 
+  set_cursor(0,0);             // set the LCD cursor   position
   main_menu.show();
   // set the initial time here:
   // DS3231 seconds, minutes, hours, day, date, month, year
@@ -287,7 +288,7 @@ void setup()
 
 void loop()
 {
-  
+
 //  displayTime(); // display the real-time clock data on the Serial Monitor,
 //  delay(1000); // every second
 //  lcd.setCursor(0,1);
