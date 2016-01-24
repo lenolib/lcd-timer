@@ -13,6 +13,8 @@ int current_menu = 0;
 int cursor_x = 0;
 int cursor_y = 0;
 
+bool is_triggered = false;
+
 #define btnRIGHT  0
 #define btnUP     1
 #define btnDOWN   2
@@ -36,6 +38,7 @@ int cursor_y = 0;
 #define POS_MINUTE_1 4
 #define POS_STATE 6
 
+#define CHECK_FREQ 10000
 
 String active_text(bool state){
   if (state) {
@@ -95,10 +98,10 @@ dayOfMonth, byte month, byte year)
 class Menu {
   public:
     unsigned int* _allowed_positions;
-    unsigned int n_allowed;
+    virtual unsigned int get_n_allowed() = 0;
     unsigned int _row;
     unsigned int cursor_idx = 0;
-    unsigned int _hour; 
+    unsigned int _hour;
     unsigned int _minute;
     virtual void show() = 0;
     // virtual void set_cursor_start_position() = 0;
@@ -111,18 +114,20 @@ class Menu {
     unsigned int get_min();
     unsigned int get_hr();
     bool set;
-    virtual void update() = 0;
+    virtual void set_time_from_rtc() = 0;
 };
 
 void Menu::left() {
-  cursor_idx = modulo((int)cursor_idx - 1, n_allowed);
+  cursor_idx = modulo((int)cursor_idx - 1, get_n_allowed());
   int new_position = _allowed_positions[cursor_idx];
   set_cursor(new_position, cursor_y);
 };
 void Menu::right() {
-  cursor_idx = modulo((int)cursor_idx + 1, n_allowed);
+  cursor_idx = modulo((int)cursor_idx + 1, get_n_allowed());
   int new_position = _allowed_positions[cursor_idx];
-  Serial.println("newpos:" + new_position);
+  Serial.println("newpos:");
+  Serial.println(get_n_allowed());
+  Serial.println(cursor_idx);
   set_cursor(new_position, cursor_y);
 };
 
@@ -135,7 +140,7 @@ void Menu::set_cursor_start_position() {
 
 unsigned int Menu::get_min() {
   return _minute;
-} 
+}
 
 unsigned int Menu::get_hr() {
   return _hour;
@@ -145,34 +150,29 @@ class ClockMode : public Menu {
   String _text = "Set current time";
   public:
     ClockMode();
+    unsigned int get_n_allowed() { return 4; };
     void show();
     void up();
     void down();
-    void update_time();
-    // void set_time();
-    void update();
+    void set_time_from_rtc();
 };
 
 ClockMode::ClockMode() {
   _row = 1;
   cursor_idx = 0;
-  n_allowed = 5;
   _hour = 0;
   _minute = 0;
   set = false;
-  _allowed_positions = new unsigned int[n_allowed];
+  _allowed_positions = new unsigned int[get_n_allowed()];
   _allowed_positions[0] = 0;
   _allowed_positions[1] = 1;
   _allowed_positions[2] = 3;
   _allowed_positions[3] = 4;
-  _allowed_positions[4] = 6;
-  //update_time();
 }
 
 void ClockMode::show() {
   lcd.clear();
   set_cursor(0, 0);
-  // update_time();
   lcd.print(_text);
   String out_str = pad_number(_hour, "0", 2) + ":" +
     pad_number(_minute, "0", 2) + " (set=exit)";
@@ -224,12 +224,7 @@ void ClockMode::down() {
   }
 }
 
-void ClockMode::update() {
-  update_time();
-}
-
-void ClockMode::update_time() {
-  Serial.println("about to update");
+void ClockMode::set_time_from_rtc() {
   readHourAndMinute(&_hour, &_minute);
 }
 
@@ -248,11 +243,12 @@ class TimerMode : public Menu{
 
   public:
     TimerMode(String name, unsigned int row);
+    unsigned int get_n_allowed() { return 5; };
     void show();
     // void set_cursor_start_position();
     void up();
     void down();
-    void update() {};
+    void set_time_from_rtc() {};
 
   private:
     // void increment_value_10(unsigned int *var, byte max_val);
@@ -267,11 +263,10 @@ TimerMode::TimerMode(String name, unsigned int row) {
   _row = row;
   _name = name;
   unsigned int _cursor_start = _name.length() + ONE_SPACE;
-  unsigned int n_allowed = 5;
   _active = false;
   _hour = 0;
   _minute = 0;
-  _allowed_positions = new unsigned int[n_allowed];
+  _allowed_positions = new unsigned int[get_n_allowed()];
   _allowed_positions[0] = _cursor_start + POS_HOUR_10;
   _allowed_positions[1] = _cursor_start + POS_HOUR_1;
   _allowed_positions[2] = _cursor_start + POS_MINUTE_10;
@@ -579,49 +574,57 @@ void setup()
   timer1->set_cursor_start_position();
 
   //Retrieve time from RTC
-  menus[MODE_CLOCKSET]->update();
+  menus[MODE_CLOCKSET]->set_time_from_rtc();
   // set the initial time here:
   // DS3231 seconds, minutes, hours, day, date, month, year
   // setDS3231time(30,18,16,7,23,1,16);
   lcd.cursor();
 }
 
+void inspect_alarm(Menu* timer_) {
+  if (
+        ( menus[MODE_CLOCKSET]->get_hr() == timer_->get_hr() )
+        &&
+        (menus[MODE_CLOCKSET]->get_min() == timer_->get_min() )
+      ) {
+    if ( !is_triggered ) {
+      trigger_relayswitch();
+      is_triggered = true;
+    }
+  } else {
+    is_triggered = false;
+  }
+}
+
+
+void loop_work() {
+  if (current_menu != MODE_CLOCKSET) {
+    menus[MODE_CLOCKSET]->set_time_from_rtc();
+  }
+  inspect_alarm(menus[MODE_TIMER_1]);
+  inspect_alarm(menus[MODE_TIMER_2]);
+}
+
+void trigger_relayswitch() {
+  digitalWrite(RELAYSWITCH_PIN, HIGH);
+  delay(1000);
+  digitalWrite(RELAYSWITCH_PIN, LOW);
+}
+
+
 unsigned int counter = 0;
 
 void loop()
 {
   counter ++;
-//  displayTime(); // display the real-time clock data on the Serial Monitor,
-//  delay(1000); // every second
-//  lcd.setCursor(0,1);
 
-  // Stop updating clock when setting it.
-  // if (current_menu != 2) {
-    // menus[MODE_CLOCKSET]->update();
-  // }
-  //menus[MODE_TIMER_1]->
   lcd_key = read_LCD_buttons();
   handle_key_press(lcd_key);
-//  lcd.noCursor();
-  //delay(300);
-  // Turn on the cursor:
-//  delay(300);
 
-  if (counter >= 10000) {
-    Serial.println("Updating Crock");
-    if (current_menu != 2) {
-      menus[MODE_CLOCKSET]->update();
-      
-  }
+  if (counter >= CHECK_FREQ) {
+    loop_work();
     counter = 0;
-  } 
+  }
 
 }
-
-
-
-
-
-
-
 
