@@ -238,6 +238,7 @@ class TimerMode : public Menu{
   public:
     TimerMode(String name, unsigned int row);
     unsigned int get_n_allowed() { return 5; };
+    void read_alarm_from_eeprom();
     void show();
     // void set_cursor_start_position();
     void up();
@@ -254,7 +255,7 @@ class TimerMode : public Menu{
     //void decrement_value(&var);
 };
 
-TimerMode::TimerMode(String name, unsigned int row) {
+TimerMode::TimerMode(String name, unsigned int row, unsigned int eeprom_addr "<-make this member") {
   _row = row;
   _name = name;
   unsigned int _cursor_start = _name.length() + ONE_SPACE;
@@ -268,6 +269,13 @@ TimerMode::TimerMode(String name, unsigned int row) {
   _allowed_positions[3] = _cursor_start + POS_MINUTE_1;
   _allowed_positions[4] = _cursor_start + POS_STATE;
 };
+
+
+void read_alarm_from_eeprom() {
+  _hour = EEEPROM.read(...h);
+  _minute = EEEPROM.read(...);
+}
+
 
 void TimerMode::show() {
   set_cursor(0, _row);
@@ -305,6 +313,7 @@ void TimerMode::up() {
       break;
     }
   }
+
 }
 
 void TimerMode::down() {
@@ -506,8 +515,13 @@ void setup()
   Wire.begin();
   Serial.begin(9600);
   lcd.begin(16, 2);               // start the library
-  
+
   set_cursor(0,0);             // set the LCD cursor   position
+
+  // Read alarms from EEPROM
+  timer1->read_alarm_from_eeprom(...)
+  timer2->read_alarm_from_eeprom(...)
+
   timer1->show();
   timer2->show();
   timer1->set_cursor_start_position();
