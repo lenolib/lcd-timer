@@ -581,17 +581,25 @@ void setup()
   lcd.cursor();
 }
 
-void inspect_alarm(Menu* timer_) {
-  if (
+void inspect_alarm(unsigned int timer_idx) {
+  Menu* timer_ = menus[timer_idx];
+  if  (
         ( menus[MODE_CLOCKSET]->get_hr() == timer_->get_hr() )
         &&
-        (menus[MODE_CLOCKSET]->get_min() == timer_->get_min() )
+        ( menus[MODE_CLOCKSET]->get_min() == timer_->get_min() )
       ) {
+  }
+
+  if (true) {
+    Serial.println("alarm time!");
+    Serial.println(is_triggered);
+    Serial.println(menus[MODE_CLOCKSET]->get_min());
     if ( !is_triggered ) {
       trigger_relayswitch();
       is_triggered = true;
     }
   } else {
+    Serial.println("rsetting bool");
     is_triggered = false;
   }
 }
@@ -601,11 +609,12 @@ void loop_work() {
   if (current_menu != MODE_CLOCKSET) {
     menus[MODE_CLOCKSET]->set_time_from_rtc();
   }
-  inspect_alarm(menus[MODE_TIMER_1]);
-  inspect_alarm(menus[MODE_TIMER_2]);
+  inspect_alarm(MODE_TIMER_1);
+  inspect_alarm(MODE_TIMER_2);
 }
 
 void trigger_relayswitch() {
+  Serial.println("Triggered");
   digitalWrite(RELAYSWITCH_PIN, HIGH);
   delay(1000);
   digitalWrite(RELAYSWITCH_PIN, LOW);
