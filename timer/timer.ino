@@ -58,7 +58,6 @@ dayOfMonth, byte month, byte year)
 }
 
 class Menu {
-
   public:
     unsigned int* _allowed_positions;
     unsigned int n_allowed;
@@ -74,6 +73,7 @@ class Menu {
     void left();
     void right();
     void set_cursor_start_position();
+    bool set;
 };
 
 void Menu::left() {
@@ -97,7 +97,6 @@ void Menu::set_cursor_start_position() {
 
 class ClockMode : public Menu {
   String _text = "Set current time";
-  bool set;
   public:
     ClockMode();
     void show();
@@ -448,7 +447,9 @@ void switch_menu() {
     menus[1]->show();
     current_menu = 0;
     menus[current_menu]->set_cursor_start_position();
-
+    if (menus[2]->set == true) {
+      menus[2]->set = false;
+    }
   }
   else {
     current_menu = ++current_menu % 2;
@@ -556,6 +557,7 @@ void setup()
   // set the initial time here:
   // DS3231 seconds, minutes, hours, day, date, month, year
   setDS3231time(30,18,16,7,23,1,16);
+  Serial.println("Hejehej");
 }
 
 void loop()
