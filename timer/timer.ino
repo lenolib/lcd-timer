@@ -62,8 +62,6 @@ class Menu {
     unsigned int* _allowed_positions;
     unsigned int n_allowed;
     unsigned int _row;
-    unsigned int _hour;
-    unsigned int _minute;
     unsigned int internal_state = 0;
     virtual void show() = 0;
     // virtual void set_cursor_start_position() = 0;
@@ -97,6 +95,8 @@ void Menu::set_cursor_start_position() {
 
 class ClockMode : public Menu {
   String _text = "Set current time";
+  unsigned int _hour; 
+  unsigned int _minute;
   public:
     ClockMode();
     void show();
@@ -110,7 +110,9 @@ ClockMode::ClockMode() {
   _row = 1;
   internal_state = 0;
   n_allowed = 5;
-  update_time();
+  _hour = 0;
+  _minute = 0;
+  // update_time();
   set = false;
   _allowed_positions = new unsigned int[n_allowed];
   _allowed_positions[0] = 0;
@@ -125,7 +127,10 @@ void ClockMode::show() {
   lcd.print(_text);
   String out_str = pad_number(_hour, "0", 2) + ":" +
     pad_number(_minute, "0", 2) + " " + set ? "Set!" : "Set?";
+  Serial.println("H:M, out");
   Serial.println(_hour);
+  Serial.println(_minute);
+  Serial.println(out_str);
   set_cursor(0, 1);
   lcd.print(out_str);
   // set_cursor(_allowed_positions[internal_state], _row);
@@ -195,6 +200,8 @@ class TimerMode : public Menu{
   // unsigned int _row;
   String _name;
   bool _active;
+  unsigned int _hour;
+  unsigned int _minute;
   // unsigned int _cursor_start;
   //unsigned int _allowed_positions[5];
 
@@ -435,6 +442,7 @@ void switch_menu() {
   int t0 = readSecond();
   while (analogRead(0) < 1000) {
     if (abs(t0 - readSecond()) > 2) {
+      Serial.println("Swtich to 2");
       current_menu = 2;
       lcd.clear();
       menus[current_menu]->show();
@@ -442,6 +450,7 @@ void switch_menu() {
     }
   }
   if (current_menu == 2) {
+    Serial.println("Swtich from 2");
     lcd.clear();
     menus[0]->show();
     menus[1]->show();
@@ -557,7 +566,7 @@ void setup()
   // set the initial time here:
   // DS3231 seconds, minutes, hours, day, date, month, year
   setDS3231time(30,18,16,7,23,1,16);
-  Serial.println("Hejehej");
+  // Serial.println("Hejehej");
 }
 
 void loop()
