@@ -9,8 +9,6 @@ LiquidCrystal lcd(8, 9, 4, 5, 6, 7);           // select the pins used on the LC
 int lcd_key     = 0;
 int adc_key_in  = 0;
 int current_menu = 0;
-bool timer1_on = false;
-bool timer2_on = false;
 int cursor_x = 0;
 int cursor_y = 0;
 
@@ -44,16 +42,22 @@ void decrement_y() {
 }
 
 class Menu {
-  String upper;
-  String lower;
+
   public:
 //    Menu(String uppers, String lowers);
-    void show();
-    void set_text(String uppers, String lowers);
-    void up();
-    void down();
+    unsigned int _allowed_positions[5];
+    unsigned int _row;
+    unsigned int _hour;
+    unsigned int _minute;
+    unsigned int internal_state = 0;
+    virtual void show() = 0;
+    // virtual void set_cursor_start_position() = 0;
+    // void set_text(String uppers, String lowers);
+    virtual void up() = 0;
+    virtual void down() = 0;
     void left();
     void right();
+    void set_cursor_start_position();
 };
 
 // Menu::Menu(String uppers, String lowers) {
@@ -61,68 +65,205 @@ class Menu {
 //   lower = lowers;
 // };
 
-void Menu::show() {
-  set_cursor(0, 0);
-  lcd.print(upper);
-  set_cursor(0, 1);
-  lcd.print(lower);
-};
-
-void Menu::up() {
-  increment_y();
-};
-void Menu::down() {
-  decrement_y();
-};
+// void Menu::up() {
+//   increment_y();
+// };
+// void Menu::down() {
+//   decrement_y();
+// };
 void Menu::left() {
-  decrement_x();
+  internal_state = modulo((int)internal_state - 1, 5);
+  int new_position = _allowed_positions[internal_state];
+  set_cursor(new_position, cursor_y);
 };
 void Menu::right() {
-  increment_x();
+  internal_state = modulo((int)internal_state + 1, 5);
+  int new_position = _allowed_positions[internal_state];
+  set_cursor(new_position, cursor_y);
 };
 
+void Menu::set_cursor_start_position() {
+  internal_state = 0;
+  Serial.println("menu set_cursor");
+  Serial.println(_row);
+  set_cursor(_allowed_positions[internal_state], this->_row);
+}
+
+
+class ClockMode : public Menu {
+  String _text = "Set current time";
+  public:
+    ClockMode();
+    void show();
+    void up();
+    void down();
+};
+
+ClockMode::ClockMode() {
+  _row = 0;
+  internal_state = 0;
+  _allowed_positions[0] = 0;
+  _allowed_positions[1] = 1;
+  _allowed_positions[2] = 3;
+  _allowed_positions[3] = 4;
+  _allowed_positions[4] = 4; // Fix this hack
+}
+
+void ClockMode::show() {
+  Serial.println("In clock menu");
+  set_cursor(0, 0);
+  lcd.print(_text);
+  set_cursor(0, 1);
+  lcd.print("HH:MM");
+};
+
+void ClockMode::up() {
+
+}
+void ClockMode::down() {
+  
+}
 
 class TimerMode : public Menu{
-  byte _row;
+  // unsigned int _row;
   String _name;
-  byte _hour;
-  byte _minute;
   bool _active;
-  byte _cursor_start;
+  unsigned int _cursor_start;
+  //unsigned int _allowed_positions[5];
 
   public:
-    TimerMode(String name, byte row);
+    TimerMode(String name, unsigned int row);
     void show();
+    // void set_cursor_start_position();
+    void up();
+    void down();
+
+  private:
+    void increment_value_10(unsigned int *var, byte max_val);
+    void increment_value_1(unsigned int *var, byte max_val);
+    void decrement_value_10(unsigned int *var, byte max_val);
+    void decrement_value_1(unsigned int *var, byte max_val);
+    void toggle_timer();
+    //void decrement_value(&var);
 };
 
-TimerMode::TimerMode(String name, byte row) {
+TimerMode::TimerMode(String name, unsigned int row) {
   _row = row;
   _name = name;
-  _cursor_start = _name.length() + 2;
+  _cursor_start = _name.length() + 1;
   _active = false;
   _hour = 0;
   _minute = 0;
+  _allowed_positions[0] = _cursor_start;
+  _allowed_positions[1] = _cursor_start + 1;
+  _allowed_positions[2] = _cursor_start + 3;
+  _allowed_positions[3] = _cursor_start + 4;
+  _allowed_positions[4] = _cursor_start + 6;
 };
 
 void TimerMode::show() {
   set_cursor(0, _row);
   String out_str = _name + " " +
     pad_number(_hour, "0", 2) + ":" +
-    pad_number(_minute, "0", 2) + active_text(_active);
-  Serial.println(out_str);
+    pad_number(_minute, "0", 2) + " " + active_text(_active);
   lcd.print(out_str);
+  set_cursor(_allowed_positions[internal_state], _row);
+}
+
+void TimerMode::increment_value_10(unsigned int *var, byte max_val) {
+  unsigned int temp_var = *var;
+  temp_var = (temp_var + 10);
+  if (temp_var >= max_val) {
+    *var = temp_var % 10;
+  }
+  else {
+    *var = temp_var;
+  }
+}
+
+void TimerMode::increment_value_1(unsigned int *var, byte max_val) {
+  *var = (*var + 1) % max_val;
+}
+
+void TimerMode::decrement_value_10(unsigned int *var, byte max_val) {
+  int temp_var = (*var - 10);
+  if (temp_var < 0) {
+    *var = 0;
+  }
+  else {
+    *var = temp_var;
+  }
+}
+
+void TimerMode::decrement_value_1(unsigned int *var, byte max_val) {
+  *var = modulo((*var - 1), max_val);
+}
+
+void TimerMode::toggle_timer() {
+  _active = !_active;
+}
+
+void TimerMode::up() {
+  switch (internal_state) {
+    case 0: {
+      increment_value_10(&_hour, 24);
+      break;
+    }
+    case 1: {
+      increment_value_1(&_hour, 24);
+      break;
+    }
+    case 2: {
+      increment_value_10(&_minute, 60);
+      break;
+    }
+    case 3: {
+      increment_value_1(&_minute, 60);
+      break;
+    }
+    case 4: {
+      toggle_timer();
+      break;
+    }
+  }
+}
+
+void TimerMode::down() {
+  switch (internal_state) {
+    case 0: {
+      decrement_value_10(&_hour, 24);
+      break;
+    }
+    case 1: {
+      decrement_value_1(&_hour, 24);
+      break;
+    }
+    case 2: {
+      decrement_value_10(&_minute, 60);
+      break;
+    }
+    case 3: {
+      decrement_value_1(&_minute, 60);
+      break;
+    }
+    case 4: {
+      toggle_timer();
+      break;
+    }
+  }
 }
 
 String active_text(bool state){
   if (state) {
-    return "ON";
+    return "ON ";
   } else {
     return "OFF";
   }
 }
 
-String pad_number(byte number, String padding, byte npads){
-  String padded = "" + number;
+String pad_number(unsigned int number, String padding, byte npads){
+  String empty_string = "";
+  String padded = empty_string + number;
   while (padded.length() < npads) {
     padded = padding + padded;
   }
@@ -131,9 +272,10 @@ String pad_number(byte number, String padding, byte npads){
 
 
 //Menu main_menu = TimerMode("Hej", 0);
-Menu timer1 = TimerMode("Timer 1", 0);
-Menu timer2 = TimerMode("Timer 2", 1);
-Menu menus[] = {timer1, timer2};
+Menu* timer1 = new TimerMode("1:", 0);
+Menu* timer2 = new TimerMode("2:", 1);
+Menu* clock_ = new ClockMode();
+Menu *menus[] = {timer1, timer2, clock_};
 
 
 // Convert normal decimal numbers to binary coded decimal
@@ -146,6 +288,10 @@ byte decToBcd(byte val)
 byte bcdToDec(byte val)
 {
   return( (val/16*10) + (val%16) );
+}
+
+int modulo (int a, int b) {
+  return a >= 0 ? a % b : ( b - abs ( a%b ) ) % b;
 }
 
 void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte
@@ -185,6 +331,15 @@ void readDS3231time(
   *dayOfMonth = bcdToDec(Wire.read());
   *month = bcdToDec(Wire.read());
   *year = bcdToDec(Wire.read());
+}
+
+int readSecond() {
+  Wire.beginTransmission(DS3231_I2C_ADDRESS);
+  Wire.write(0);
+  Wire.endTransmission();
+  Wire.requestFrom(DS3231_I2C_ADDRESS, 1);
+  int second = bcdToDec(Wire.read() & 0x7f);
+  return second;
 }
 
 void displayTime()
@@ -245,7 +400,7 @@ int read_LCD_buttons(){               // read the buttons
 //    lcd.clear();
 //    lcd.print(adc_key_in);
 //    delay(100);
-    // my buttons when read are centered at these valies: 0, 144, 329, 504, 741
+    // my buttons when read are centered at these valies: x,x,x,x,x,x
     // we add approx 50 to those values and check to see if we are close
     // We make this the 1st option for speed reasons since it will be the most likely result
 
@@ -258,15 +413,6 @@ int read_LCD_buttons(){               // read the buttons
     if (adc_key_in < 450)  return btnLEFT;
     if (adc_key_in < 700)  return btnSELECT;
 
-   // For V1.0 comment the other threshold and use the one below:
-   /*
-     if (adc_key_in < 50)   return btnRIGHT;
-     if (adc_key_in < 195)  return btnUP;
-     if (adc_key_in < 380)  return btnDOWN;
-     if (adc_key_in < 555)  return btnLEFT;
-     if (adc_key_in < 790)  return btnSELECT;
-   */
-
     return btnNONE;                // when all others fail, return this.
 }
 
@@ -274,24 +420,25 @@ void handle_key_press(int lcd_key)
 {
   switch (lcd_key){               // depending on which button was pushed, we perform an action
     case btnRIGHT:{             //  push button "RIGHT" and show the word on the screen
-      menus[current_menu].right();
+      menus[current_menu]->right();
       debounce();
       break;
     }
     case btnLEFT:{
-      menus[current_menu].left();
+      menus[current_menu]->left();
       debounce();
       break;
     }
     case btnUP:{
-      menus[current_menu].up();
+      menus[current_menu]->up();
       debounce();
-      //lcd.print("Hej Lennart");  //  push button "UP" and show the word on the screen
+      menus[current_menu]->show();
       break;
     }
     case btnDOWN:{
-      menus[current_menu].down();
+      menus[current_menu]->down();
       debounce();
+      menus[current_menu]->show();
       break;
     }
     case btnSELECT:{
@@ -300,16 +447,33 @@ void handle_key_press(int lcd_key)
       break;
     }
     case btnNONE:{
-//      lcd.print("NONE  ");  //  No action  will show "None" on the screen
       break;
     }
   }
 }
 
 void switch_menu() {
-  current_menu = ++current_menu % 2;
-  lcd.clear();
-  menus[current_menu].show();
+  int t0 = readSecond();
+  while (analogRead(0) < 1000) {
+    if (abs(t0 - readSecond()) > 2) {
+      current_menu = 2;
+      lcd.clear();
+      menus[current_menu]->show();
+      return;
+    }
+  }
+  if (current_menu == 2) {
+    lcd.clear();
+    menus[0]->show();
+    menus[1]->show();
+    current_menu = 0;
+    menus[current_menu]->set_cursor_start_position();
+
+  }
+  else {
+    current_menu = ++current_menu % 2;
+    menus[current_menu]->show();
+  }
 }
 
 void debounce() {
@@ -324,7 +488,9 @@ void setup()
   Serial.begin(9600);
   lcd.begin(16, 2);               // start the library
   set_cursor(0,0);             // set the LCD cursor   position
-  timer1.show();
+  timer1->show();
+  timer2->show();
+  timer1->set_cursor_start_position();
   // set the initial time here:
   // DS3231 seconds, minutes, hours, day, date, month, year
   setDS3231time(30,18,16,7,23,1,16);
