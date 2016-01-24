@@ -41,11 +41,27 @@ void decrement_y() {
   set_cursor(cursor_x, (cursor_y - 1) % MAX_Y);
 }
 
+void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte
+dayOfMonth, byte month, byte year)
+{
+  // sets time and date data to DS3231
+  Wire.beginTransmission(DS3231_I2C_ADDRESS);
+  Wire.write(0); // set next input to start at the seconds register
+  Wire.write(decToBcd(second)); // set seconds
+  Wire.write(decToBcd(minute)); // set minutes
+  Wire.write(decToBcd(hour)); // set hours
+  Wire.write(decToBcd(dayOfWeek)); // set day of week (1=Sunday, 7=Saturday)
+  Wire.write(decToBcd(dayOfMonth)); // set date (1 to 31)
+  Wire.write(decToBcd(month)); // set month
+  Wire.write(decToBcd(year)); // set year (0 to 99)
+  Wire.endTransmission();
+}
+
 class Menu {
 
   public:
-//    Menu(String uppers, String lowers);
-    unsigned int _allowed_positions[5];
+    unsigned int* _allowed_positions;
+    unsigned int n_allowed;
     unsigned int _row;
     unsigned int _hour;
     unsigned int _minute;
@@ -60,24 +76,13 @@ class Menu {
     void set_cursor_start_position();
 };
 
-// Menu::Menu(String uppers, String lowers) {
-//   upper = uppers;
-//   lower = lowers;
-// };
-
-// void Menu::up() {
-//   increment_y();
-// };
-// void Menu::down() {
-//   decrement_y();
-// };
 void Menu::left() {
-  internal_state = modulo((int)internal_state - 1, 5);
+  internal_state = modulo((int)internal_state - 1, n_allowed);
   int new_position = _allowed_positions[internal_state];
   set_cursor(new_position, cursor_y);
 };
 void Menu::right() {
-  internal_state = modulo((int)internal_state + 1, 5);
+  internal_state = modulo((int)internal_state + 1, n_allowed);
   int new_position = _allowed_positions[internal_state];
   set_cursor(new_position, cursor_y);
 };
@@ -92,43 +97,106 @@ void Menu::set_cursor_start_position() {
 
 class ClockMode : public Menu {
   String _text = "Set current time";
+  bool set;
   public:
     ClockMode();
     void show();
     void up();
     void down();
+    void update_time();
+    void set_time();
 };
 
 ClockMode::ClockMode() {
-  _row = 0;
+  _row = 1;
   internal_state = 0;
+  n_allowed = 5;
+  update_time();
+  set = false;
+  _allowed_positions = new unsigned int[n_allowed];
   _allowed_positions[0] = 0;
   _allowed_positions[1] = 1;
   _allowed_positions[2] = 3;
   _allowed_positions[3] = 4;
-  _allowed_positions[4] = 4; // Fix this hack
+  _allowed_positions[4] = 6;
 }
 
 void ClockMode::show() {
-  Serial.println("In clock menu");
   set_cursor(0, 0);
   lcd.print(_text);
+  String out_str = pad_number(_hour, "0", 2) + ":" +
+    pad_number(_minute, "0", 2) + " " + set ? "Set!" : "Set?";
+  Serial.println(_hour);
   set_cursor(0, 1);
-  lcd.print("HH:MM");
+  lcd.print(out_str);
+  // set_cursor(_allowed_positions[internal_state], _row);
+  set_cursor(_allowed_positions[internal_state], _row);
 };
 
 void ClockMode::up() {
-
+  switch (internal_state) {
+    case 0: {
+      increment_value_10(&_hour, 24);
+      break;
+    }
+    case 1: {
+      increment_value_1(&_hour, 24);
+      break;
+    }
+    case 2: {
+      increment_value_10(&_minute, 60);
+      break;
+    }
+    case 3: {
+      increment_value_1(&_minute, 60);
+      break;
+    }
+    case 4: {
+      set_time();
+      break;
+    }
+  }
 }
+
 void ClockMode::down() {
-  
+  switch (internal_state) {
+    case 0: {
+      decrement_value_10(&_hour, 24);
+      break;
+    }
+    case 1: {
+      decrement_value_1(&_hour, 24);
+      break;
+    }
+    case 2: {
+      decrement_value_10(&_minute, 60);
+      break;
+    }
+    case 3: {
+      decrement_value_1(&_minute, 60);
+      break;
+    }
+    case 4: {
+      set_time();
+      break;
+    }
+  }
+}
+
+void ClockMode::update_time() {
+  readHourAndMinute(&_hour, &_minute);
+}
+
+void ClockMode::set_time() {
+  setDS3231time(0, _minute, _hour, 0, 0, 0, 0);
+  set = true;
 }
 
 class TimerMode : public Menu{
   // unsigned int _row;
   String _name;
   bool _active;
-  unsigned int _cursor_start;
+  // unsigned int _cursor_start;
   //unsigned int _allowed_positions[5];
 
   public:
@@ -139,10 +207,10 @@ class TimerMode : public Menu{
     void down();
 
   private:
-    void increment_value_10(unsigned int *var, byte max_val);
-    void increment_value_1(unsigned int *var, byte max_val);
-    void decrement_value_10(unsigned int *var, byte max_val);
-    void decrement_value_1(unsigned int *var, byte max_val);
+    // void increment_value_10(unsigned int *var, byte max_val);
+    // void increment_value_1(unsigned int *var, byte max_val);
+    // void decrement_value_10(unsigned int *var, byte max_val);
+    // void decrement_value_1(unsigned int *var, byte max_val);
     void toggle_timer();
     //void decrement_value(&var);
 };
@@ -150,10 +218,12 @@ class TimerMode : public Menu{
 TimerMode::TimerMode(String name, unsigned int row) {
   _row = row;
   _name = name;
-  _cursor_start = _name.length() + 1;
+  unsigned int _cursor_start = _name.length() + 1;
+  unsigned int n_allowed = 5;
   _active = false;
   _hour = 0;
   _minute = 0;
+  _allowed_positions = new unsigned int[n_allowed];
   _allowed_positions[0] = _cursor_start;
   _allowed_positions[1] = _cursor_start + 1;
   _allowed_positions[2] = _cursor_start + 3;
@@ -168,35 +238,6 @@ void TimerMode::show() {
     pad_number(_minute, "0", 2) + " " + active_text(_active);
   lcd.print(out_str);
   set_cursor(_allowed_positions[internal_state], _row);
-}
-
-void TimerMode::increment_value_10(unsigned int *var, byte max_val) {
-  unsigned int temp_var = *var;
-  temp_var = (temp_var + 10);
-  if (temp_var >= max_val) {
-    *var = temp_var % 10;
-  }
-  else {
-    *var = temp_var;
-  }
-}
-
-void TimerMode::increment_value_1(unsigned int *var, byte max_val) {
-  *var = (*var + 1) % max_val;
-}
-
-void TimerMode::decrement_value_10(unsigned int *var, byte max_val) {
-  int temp_var = (*var - 10);
-  if (temp_var < 0) {
-    *var = 0;
-  }
-  else {
-    *var = temp_var;
-  }
-}
-
-void TimerMode::decrement_value_1(unsigned int *var, byte max_val) {
-  *var = modulo((*var - 1), max_val);
 }
 
 void TimerMode::toggle_timer() {
@@ -270,8 +311,6 @@ String pad_number(unsigned int number, String padding, byte npads){
   return padded;
 }
 
-
-//Menu main_menu = TimerMode("Hej", 0);
 Menu* timer1 = new TimerMode("1:", 0);
 Menu* timer2 = new TimerMode("2:", 1);
 Menu* clock_ = new ClockMode();
@@ -292,22 +331,6 @@ byte bcdToDec(byte val)
 
 int modulo (int a, int b) {
   return a >= 0 ? a % b : ( b - abs ( a%b ) ) % b;
-}
-
-void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte
-dayOfMonth, byte month, byte year)
-{
-  // sets time and date data to DS3231
-  Wire.beginTransmission(DS3231_I2C_ADDRESS);
-  Wire.write(0); // set next input to start at the seconds register
-  Wire.write(decToBcd(second)); // set seconds
-  Wire.write(decToBcd(minute)); // set minutes
-  Wire.write(decToBcd(hour)); // set hours
-  Wire.write(decToBcd(dayOfWeek)); // set day of week (1=Sunday, 7=Saturday)
-  Wire.write(decToBcd(dayOfMonth)); // set date (1 to 31)
-  Wire.write(decToBcd(month)); // set month
-  Wire.write(decToBcd(year)); // set year (0 to 99)
-  Wire.endTransmission();
 }
 
 void readDS3231time(
@@ -342,57 +365,14 @@ int readSecond() {
   return second;
 }
 
-void displayTime()
-{
-  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
-  // retrieve data from DS3231
-  readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
-  &year);
-  // send it to the serial monitor
-  Serial.print(hour, DEC);
-  // convert the byte variable to a decimal number when displayed
-  Serial.print(":");
-  if (minute<10)
-  {
-    Serial.print("0");
-  }
-  Serial.print(minute, DEC);
-  Serial.print(":");
-  if (second<10)
-  {
-    Serial.print("0");
-  }
-  Serial.print(second, DEC);
-  Serial.print(" ");
-  Serial.print(dayOfMonth, DEC);
-  Serial.print("/");
-  Serial.print(month, DEC);
-  Serial.print("/");
-  Serial.print(year, DEC);
-  Serial.print(" Day of week: ");
-  switch(dayOfWeek){
-  case 1:
-    Serial.println("Sunday");
-    break;
-  case 2:
-    Serial.println("Monday");
-    break;
-  case 3:
-    Serial.println("Tuesday");
-    break;
-  case 4:
-    Serial.println("Wednesday");
-    break;
-  case 5:
-    Serial.println("Thursday");
-    break;
-  case 6:
-    Serial.println("Friday");
-    break;
-  case 7:
-    Serial.println("Saturday");
-    break;
-  }
+void readHourAndMinute(unsigned int *hour, unsigned int *minute) {
+  Wire.beginTransmission(DS3231_I2C_ADDRESS);
+  Wire.write(0);
+  Wire.endTransmission();
+  Wire.requestFrom(DS3231_I2C_ADDRESS, 3);
+  int second = bcdToDec(Wire.read() & 0x7f);
+  *minute = bcdToDec(Wire.read());
+  *hour = bcdToDec(Wire.read() & 0x3f);
 }
 
 int read_LCD_buttons(){               // read the buttons
@@ -479,6 +459,88 @@ void switch_menu() {
 void debounce() {
   while(analogRead(0) < 1000) {
     //keep looping until released
+  }
+}
+
+void increment_value_10(unsigned int *var, byte max_val) {
+  unsigned int temp_var = *var;
+  temp_var = (temp_var + 10);
+  if (temp_var >= max_val) {
+    *var = temp_var % 10;
+  }
+  else {
+    *var = temp_var;
+  }
+}
+
+void increment_value_1(unsigned int *var, byte max_val) {
+  *var = (*var + 1) % max_val;
+}
+
+void decrement_value_10(unsigned int *var, byte max_val) {
+  int temp_var = (*var - 10);
+  if (temp_var < 0) {
+    *var = 0;
+  }
+  else {
+    *var = temp_var;
+  }
+}
+
+void decrement_value_1(unsigned int *var, byte max_val) {
+  *var = modulo((*var - 1), max_val);
+}
+
+void displayTime()
+{
+  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
+  // retrieve data from DS3231
+  readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
+  &year);
+  // send it to the serial monitor
+  Serial.print(hour, DEC);
+  // convert the byte variable to a decimal number when displayed
+  Serial.print(":");
+  if (minute<10)
+  {
+    Serial.print("0");
+  }
+  Serial.print(minute, DEC);
+  Serial.print(":");
+  if (second<10)
+  {
+    Serial.print("0");
+  }
+  Serial.print(second, DEC);
+  Serial.print(" ");
+  Serial.print(dayOfMonth, DEC);
+  Serial.print("/");
+  Serial.print(month, DEC);
+  Serial.print("/");
+  Serial.print(year, DEC);
+  Serial.print(" Day of week: ");
+  switch(dayOfWeek){
+  case 1:
+    Serial.println("Sunday");
+    break;
+  case 2:
+    Serial.println("Monday");
+    break;
+  case 3:
+    Serial.println("Tuesday");
+    break;
+  case 4:
+    Serial.println("Wednesday");
+    break;
+  case 5:
+    Serial.println("Thursday");
+    break;
+  case 6:
+    Serial.println("Friday");
+    break;
+  case 7:
+    Serial.println("Saturday");
+    break;
   }
 }
 
