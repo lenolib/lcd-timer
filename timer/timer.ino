@@ -125,16 +125,11 @@ void Menu::left() {
 void Menu::right() {
   cursor_idx = modulo((int)cursor_idx + 1, get_n_allowed());
   int new_position = _allowed_positions[cursor_idx];
-  Serial.println("newpos:");
-  Serial.println(get_n_allowed());
-  Serial.println(cursor_idx);
   set_cursor(new_position, cursor_y);
 };
 
 void Menu::set_cursor_start_position() {
   cursor_idx = 0;
-  Serial.println("menu set_cursor");
-  Serial.println(_row);
   set_cursor(_allowed_positions[cursor_idx], this->_row);
 }
 
@@ -235,7 +230,6 @@ void write_t_to_rtc(unsigned int min, unsigned int hr) {
 class TimerMode : public Menu{
   // unsigned int _row;
   String _name;
-  bool _active;
   // unsigned int _hour;
   // unsigned int _minute;
   // unsigned int _cursor_start;
@@ -249,6 +243,7 @@ class TimerMode : public Menu{
     void up();
     void down();
     void set_time_from_rtc() {};
+    bool active;
 
   private:
     // void increment_value_10(unsigned int *var, byte max_val);
@@ -263,7 +258,7 @@ TimerMode::TimerMode(String name, unsigned int row) {
   _row = row;
   _name = name;
   unsigned int _cursor_start = _name.length() + ONE_SPACE;
-  _active = false;
+  active = false;
   _hour = 0;
   _minute = 0;
   _allowed_positions = new unsigned int[get_n_allowed()];
@@ -278,13 +273,13 @@ void TimerMode::show() {
   set_cursor(0, _row);
   String out_str = _name + " " +
     pad_number(_hour, "0", 2) + ":" +
-    pad_number(_minute, "0", 2) + " " + active_text(_active);
+    pad_number(_minute, "0", 2) + " " + active_text(active);
   lcd.print(out_str);
   set_cursor(_allowed_positions[cursor_idx], _row);
 }
 
 void TimerMode::toggle_timer() {
-  _active = !_active;
+  active = !active;
 }
 
 void TimerMode::up() {
@@ -435,59 +430,6 @@ void decrement_value_1(unsigned int *var, byte max_val) {
   *var = modulo((*var - 1), max_val);
 }
 
-void displayTime()
-{
-  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
-  // retrieve data from DS3231
-  readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
-  &year);
-  // send it to the serial monitor
-  Serial.print(hour, DEC);
-  // convert the byte variable to a decimal number when displayed
-  Serial.print(":");
-  if (minute<10)
-  {
-    Serial.print("0");
-  }
-  Serial.print(minute, DEC);
-  Serial.print(":");
-  if (second<10)
-  {
-    Serial.print("0");
-  }
-  Serial.print(second, DEC);
-  Serial.print(" ");
-  Serial.print(dayOfMonth, DEC);
-  Serial.print("/");
-  Serial.print(month, DEC);
-  Serial.print("/");
-  Serial.print(year, DEC);
-  Serial.print(" Day of week: ");
-  switch(dayOfWeek){
-  case 1:
-    Serial.println("Sunday");
-    break;
-  case 2:
-    Serial.println("Monday");
-    break;
-  case 3:
-    Serial.println("Tuesday");
-    break;
-  case 4:
-    Serial.println("Wednesday");
-    break;
-  case 5:
-    Serial.println("Thursday");
-    break;
-  case 6:
-    Serial.println("Friday");
-    break;
-  case 7:
-    Serial.println("Saturday");
-    break;
-  }
-}
-
 Menu* timer1 = new TimerMode("1:", 0);
 Menu* timer2 = new TimerMode("2:", 1);
 Menu* clock_ = new ClockMode();
@@ -555,19 +497,16 @@ void handle_key_press(int lcd_key)
   }
 }
 
-void foo () {
-  Serial.println("Bar");
-}
-
 void setup()
 {
   // Timer1.initialize(10000000);         // initialize timer1, and set a 1/2 second period                // setup pwm on pin 9, 50% duty cycle
   // Timer1.attachInterrupt(checkClock);   // Set Timer ISR to update clock status
-  //pinMode(RELAYSWITCH_PIN, OUTPUT);
-  //digitalWrite(RELAYSWITCH_PIN, LOW);
+  pinMode(RELAYSWITCH_PIN, OUTPUT);
+  digitalWrite(RELAYSWITCH_PIN, LOW);
   Wire.begin();
   Serial.begin(9600);
   lcd.begin(16, 2);               // start the library
+  
   set_cursor(0,0);             // set the LCD cursor   position
   timer1->show();
   timer2->show();
@@ -575,33 +514,16 @@ void setup()
 
   //Retrieve time from RTC
   menus[MODE_CLOCKSET]->set_time_from_rtc();
-  // set the initial time here:
-  // DS3231 seconds, minutes, hours, day, date, month, year
-  // setDS3231time(30,18,16,7,23,1,16);
   lcd.cursor();
 }
 
-void inspect_alarm(unsigned int timer_idx) {
+bool should_alarm_trigger(unsigned int timer_idx) {
   Menu* timer_ = menus[timer_idx];
-  if  (
-        ( menus[MODE_CLOCKSET]->get_hr() == timer_->get_hr() )
-        &&
-        ( menus[MODE_CLOCKSET]->get_min() == timer_->get_min() )
-      ) {
-  }
-
-  if (true) {
-    Serial.println("alarm time!");
-    Serial.println(is_triggered);
-    Serial.println(menus[MODE_CLOCKSET]->get_min());
-    if ( !is_triggered ) {
-      trigger_relayswitch();
-      is_triggered = true;
-    }
-  } else {
-    Serial.println("rsetting bool");
-    is_triggered = false;
-  }
+  bool active = static_cast<TimerMode*>(timer_)->active;
+  bool same_hour = menus[MODE_CLOCKSET]->get_hr() == timer_->get_hr();
+  bool same_minute = menus[MODE_CLOCKSET]->get_min() == timer_->get_min();
+  if  ((same_hour and same_minute) and active){ return true; }
+  else {return false;}
 }
 
 
@@ -609,8 +531,17 @@ void loop_work() {
   if (current_menu != MODE_CLOCKSET) {
     menus[MODE_CLOCKSET]->set_time_from_rtc();
   }
-  inspect_alarm(MODE_TIMER_1);
-  inspect_alarm(MODE_TIMER_2);
+  bool alarm_1 = should_alarm_trigger(MODE_TIMER_1);
+  bool alarm_2 = should_alarm_trigger(MODE_TIMER_2);
+  if (alarm_1 or alarm_2) {
+    if (!is_triggered){
+      trigger_relayswitch();
+      is_triggered = true;
+    }
+  }
+  else {
+    is_triggered = false;
+  }
 }
 
 void trigger_relayswitch() {
