@@ -1,9 +1,10 @@
 #include "Wire.h"
 #include <LiquidCrystal.h>
+#include "TimerOne.h"
 
 using namespace std;
 
-LiquidCrystal lcd(8, 9, 4, 5, 6, 7);           // select the pins used on the LCD panel
+LiquidCrystal lcd(8, 11, 4, 5, 6, 7);           // select the pins used on the LCD panel
 
 // define some values used by the panel and buttons
 int lcd_key     = 0;
@@ -22,23 +23,43 @@ int cursor_y = 0;
 #define MAX_X 16
 #define MAX_Y 2
 
+String active_text(bool state){
+  if (state) {
+    return "ON ";
+  } else {
+    return "OFF";
+  }
+}
+
+String pad_number(unsigned int number, String padding, byte npads){
+  String empty_string = "";
+  String padded = empty_string + number;
+  while (padded.length() < npads) {
+    padded = padding + padded;
+  }
+  return padded;
+}
+
+// Convert normal decimal numbers to binary coded decimal
+byte decToBcd(byte val)
+{
+  return( (val/10*16) + (val%10) );
+}
+
+// Convert binary coded decimal to normal decimal numbers
+byte bcdToDec(byte val)
+{
+  return( (val/16*10) + (val%16) );
+}
+
+int modulo (int a, int b) {
+  return a >= 0 ? a % b : ( b - abs ( a%b ) ) % b;
+}
+
 void set_cursor(int x, int y) {
   cursor_x = x;
   cursor_y = y;
   lcd.setCursor(cursor_x, cursor_y);
-}
-
-void increment_x() {
-  set_cursor((cursor_x + 1) % MAX_X, cursor_y);
-}
-void decrement_x() {
-  set_cursor((cursor_x - 1) % MAX_X, cursor_y);
-}
-void increment_y() {
-  set_cursor(cursor_x, (cursor_y + 1) % MAX_Y);
-}
-void decrement_y() {
-  set_cursor(cursor_x, (cursor_y - 1) % MAX_Y);
 }
 
 void setDS3231time(byte second, byte minute, byte hour, byte dayOfWeek, byte
@@ -63,6 +84,8 @@ class Menu {
     unsigned int n_allowed;
     unsigned int _row;
     unsigned int internal_state = 0;
+    unsigned int _hour; 
+    unsigned int _minute;
     virtual void show() = 0;
     // virtual void set_cursor_start_position() = 0;
     // void set_text(String uppers, String lowers);
@@ -71,7 +94,10 @@ class Menu {
     void left();
     void right();
     void set_cursor_start_position();
+    unsigned int get_min();
+    unsigned int get_hr();
     bool set;
+    virtual void update() = 0;
 };
 
 void Menu::left() {
@@ -92,18 +118,24 @@ void Menu::set_cursor_start_position() {
   set_cursor(_allowed_positions[internal_state], this->_row);
 }
 
+unsigned int Menu::get_min() {
+  return _minute;
+} 
+
+unsigned int Menu::get_hr() {
+  return _hour;
+}
 
 class ClockMode : public Menu {
   String _text = "Set current time";
-  unsigned int _hour; 
-  unsigned int _minute;
   public:
     ClockMode();
     void show();
     void up();
     void down();
     void update_time();
-    void set_time();
+    // void set_time();
+    void update();
 };
 
 ClockMode::ClockMode() {
@@ -112,7 +144,6 @@ ClockMode::ClockMode() {
   n_allowed = 5;
   _hour = 0;
   _minute = 0;
-  // update_time();
   set = false;
   _allowed_positions = new unsigned int[n_allowed];
   _allowed_positions[0] = 0;
@@ -120,17 +151,16 @@ ClockMode::ClockMode() {
   _allowed_positions[2] = 3;
   _allowed_positions[3] = 4;
   _allowed_positions[4] = 6;
+  //update_time();
 }
 
 void ClockMode::show() {
+  lcd.clear();
   set_cursor(0, 0);
+  // update_time();
   lcd.print(_text);
   String out_str = pad_number(_hour, "0", 2) + ":" +
-    pad_number(_minute, "0", 2) + " " + set ? "Set!" : "Set?";
-  Serial.println("H:M, out");
-  Serial.println(_hour);
-  Serial.println(_minute);
-  Serial.println(out_str);
+    pad_number(_minute, "0", 2);
   set_cursor(0, 1);
   lcd.print(out_str);
   // set_cursor(_allowed_positions[internal_state], _row);
@@ -155,10 +185,6 @@ void ClockMode::up() {
       increment_value_1(&_minute, 60);
       break;
     }
-    case 4: {
-      set_time();
-      break;
-    }
   }
 }
 
@@ -180,28 +206,28 @@ void ClockMode::down() {
       decrement_value_1(&_minute, 60);
       break;
     }
-    case 4: {
-      set_time();
-      break;
-    }
   }
 }
 
+void ClockMode::update() {
+  update_time();
+}
+
 void ClockMode::update_time() {
+  Serial.println("about to update");
   readHourAndMinute(&_hour, &_minute);
 }
 
-void ClockMode::set_time() {
-  setDS3231time(0, _minute, _hour, 0, 0, 0, 0);
-  set = true;
+void write_t_to_rtc(unsigned int min, unsigned int hr) {
+  setDS3231time(0, min, hr, 0, 0, 0, 0);
 }
 
 class TimerMode : public Menu{
   // unsigned int _row;
   String _name;
   bool _active;
-  unsigned int _hour;
-  unsigned int _minute;
+  // unsigned int _hour;
+  // unsigned int _minute;
   // unsigned int _cursor_start;
   //unsigned int _allowed_positions[5];
 
@@ -211,6 +237,7 @@ class TimerMode : public Menu{
     // void set_cursor_start_position();
     void up();
     void down();
+    void update() {};
 
   private:
     // void increment_value_10(unsigned int *var, byte max_val);
@@ -300,45 +327,6 @@ void TimerMode::down() {
   }
 }
 
-String active_text(bool state){
-  if (state) {
-    return "ON ";
-  } else {
-    return "OFF";
-  }
-}
-
-String pad_number(unsigned int number, String padding, byte npads){
-  String empty_string = "";
-  String padded = empty_string + number;
-  while (padded.length() < npads) {
-    padded = padding + padded;
-  }
-  return padded;
-}
-
-Menu* timer1 = new TimerMode("1:", 0);
-Menu* timer2 = new TimerMode("2:", 1);
-Menu* clock_ = new ClockMode();
-Menu *menus[] = {timer1, timer2, clock_};
-
-
-// Convert normal decimal numbers to binary coded decimal
-byte decToBcd(byte val)
-{
-  return( (val/10*16) + (val%10) );
-}
-
-// Convert binary coded decimal to normal decimal numbers
-byte bcdToDec(byte val)
-{
-  return( (val/16*10) + (val%16) );
-}
-
-int modulo (int a, int b) {
-  return a >= 0 ? a % b : ( b - abs ( a%b ) ) % b;
-}
-
 void readDS3231time(
     byte *second,
     byte *minute,
@@ -372,13 +360,21 @@ int readSecond() {
 }
 
 void readHourAndMinute(unsigned int *hour, unsigned int *minute) {
+  Serial.println("1---");
   Wire.beginTransmission(DS3231_I2C_ADDRESS);
+  Serial.println("2---");
   Wire.write(0);
+  Serial.println("3---");
   Wire.endTransmission();
+  Serial.println("4---");
   Wire.requestFrom(DS3231_I2C_ADDRESS, 3);
+  Serial.println("5---");
   int second = bcdToDec(Wire.read() & 0x7f);
+  Serial.println("6---");
   *minute = bcdToDec(Wire.read());
+  Serial.println("7---");
   *hour = bcdToDec(Wire.read() & 0x3f);
+  Serial.println("8---");
 }
 
 int read_LCD_buttons(){               // read the buttons
@@ -400,70 +396,6 @@ int read_LCD_buttons(){               // read the buttons
     if (adc_key_in < 700)  return btnSELECT;
 
     return btnNONE;                // when all others fail, return this.
-}
-
-void handle_key_press(int lcd_key)
-{
-  switch (lcd_key){               // depending on which button was pushed, we perform an action
-    case btnRIGHT:{             //  push button "RIGHT" and show the word on the screen
-      menus[current_menu]->right();
-      debounce();
-      break;
-    }
-    case btnLEFT:{
-      menus[current_menu]->left();
-      debounce();
-      break;
-    }
-    case btnUP:{
-      menus[current_menu]->up();
-      debounce();
-      menus[current_menu]->show();
-      break;
-    }
-    case btnDOWN:{
-      menus[current_menu]->down();
-      debounce();
-      menus[current_menu]->show();
-      break;
-    }
-    case btnSELECT:{
-      switch_menu();
-      debounce();
-      break;
-    }
-    case btnNONE:{
-      break;
-    }
-  }
-}
-
-void switch_menu() {
-  int t0 = readSecond();
-  while (analogRead(0) < 1000) {
-    if (abs(t0 - readSecond()) > 2) {
-      Serial.println("Swtich to 2");
-      current_menu = 2;
-      lcd.clear();
-      menus[current_menu]->show();
-      return;
-    }
-  }
-  if (current_menu == 2) {
-    Serial.println("Swtich from 2");
-    lcd.clear();
-    menus[0]->show();
-    menus[1]->show();
-    current_menu = 0;
-    menus[current_menu]->set_cursor_start_position();
-    if (menus[2]->set == true) {
-      menus[2]->set = false;
-    }
-  }
-  else {
-    current_menu = ++current_menu % 2;
-    menus[current_menu]->show();
-  }
 }
 
 void debounce() {
@@ -554,8 +486,81 @@ void displayTime()
   }
 }
 
+Menu* timer1 = new TimerMode("1:", 0);
+Menu* timer2 = new TimerMode("2:", 1);
+Menu* clock_ = new ClockMode();
+Menu *menus[] = {timer1, timer2, clock_};
+
+void switch_menu() {
+  int t0 = readSecond();
+  while (analogRead(0) < 1000) {
+    if (abs(t0 - readSecond()) > 2) {
+      Serial.println("Swtich to 2");
+      current_menu = 2;
+      lcd.clear();
+      menus[current_menu]->show();
+      return;
+    }
+  }
+  if (current_menu == 2) {
+    Serial.println("Switch from 2");
+    lcd.clear();
+    menus[0]->show();
+    menus[1]->show();
+    current_menu = 0;
+    menus[current_menu]->set_cursor_start_position();
+    write_t_to_rtc(menus[2]->get_min(), menus[2]->get_hr());
+  }
+  else {
+    current_menu = ++current_menu % 2;
+    menus[current_menu]->show();
+  }
+}
+
+void handle_key_press(int lcd_key)
+{
+  switch (lcd_key){               // depending on which button was pushed, we perform an action
+    case btnRIGHT:{             //  push button "RIGHT" and show the word on the screen
+      menus[current_menu]->right();
+      debounce();
+      break;
+    }
+    case btnLEFT:{
+      menus[current_menu]->left();
+      debounce();
+      break;
+    }
+    case btnUP:{
+      menus[current_menu]->up();
+      debounce();
+      menus[current_menu]->show();
+      break;
+    }
+    case btnDOWN:{
+      menus[current_menu]->down();
+      debounce();
+      menus[current_menu]->show();
+      break;
+    }
+    case btnSELECT:{
+      switch_menu();
+      debounce();
+      break;
+    }
+    case btnNONE:{
+      break;
+    }
+  }
+}
+
+void foo () {
+  Serial.println("Bar");
+}
+
 void setup()
 {
+  // Timer1.initialize(10000000);         // initialize timer1, and set a 1/2 second period                // setup pwm on pin 9, 50% duty cycle
+  // Timer1.attachInterrupt(checkClock);   // Set Timer ISR to update clock status
   Wire.begin();
   Serial.begin(9600);
   lcd.begin(16, 2);               // start the library
@@ -563,18 +568,29 @@ void setup()
   timer1->show();
   timer2->show();
   timer1->set_cursor_start_position();
+
+  //Retrieve time from RTC
+  menus[2]->update();
   // set the initial time here:
   // DS3231 seconds, minutes, hours, day, date, month, year
-  setDS3231time(30,18,16,7,23,1,16);
+  // setDS3231time(30,18,16,7,23,1,16);
   // Serial.println("Hejehej");
 }
 
+unsigned int counter = 0;
+
 void loop()
 {
-
+  counter ++;
 //  displayTime(); // display the real-time clock data on the Serial Monitor,
 //  delay(1000); // every second
 //  lcd.setCursor(0,1);
+
+  // Stop updating clock when setting it.
+  // if (current_menu != 2) {
+    // menus[2]->update();
+  // }
+
   lcd_key = read_LCD_buttons();
   handle_key_press(lcd_key);
 //  lcd.noCursor();
@@ -582,6 +598,16 @@ void loop()
   // Turn on the cursor:
   lcd.cursor();
 //  delay(300);
+
+  if (counter >= 10000) {
+    Serial.println("Updating Crock");
+    if (current_menu != 2) {
+      menus[2]->update();
+      
+  }
+    counter = 0;
+  } 
+
 }
 
 
