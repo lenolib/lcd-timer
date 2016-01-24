@@ -375,21 +375,13 @@ int readSecond() {
 }
 
 void readHourAndMinute(unsigned int *hour, unsigned int *minute) {
-  Serial.println("1---");
   Wire.beginTransmission(DS3231_I2C_ADDRESS);
-  Serial.println("2---");
   Wire.write(0);
-  Serial.println("3---");
   Wire.endTransmission();
-  Serial.println("4---");
   Wire.requestFrom(DS3231_I2C_ADDRESS, 3);
-  Serial.println("5---");
   int second = bcdToDec(Wire.read() & 0x7f);
-  Serial.println("6---");
   *minute = bcdToDec(Wire.read());
-  Serial.println("7---");
   *hour = bcdToDec(Wire.read() & 0x3f);
-  Serial.println("8---");
 }
 
 int read_LCD_buttons(){               // read the buttons
@@ -576,8 +568,8 @@ void setup()
 {
   // Timer1.initialize(10000000);         // initialize timer1, and set a 1/2 second period                // setup pwm on pin 9, 50% duty cycle
   // Timer1.attachInterrupt(checkClock);   // Set Timer ISR to update clock status
-  pinMode(RELAYSWITCH_PIN, OUTPUT);
-  digitalWrite(RELAYSWITCH_PIN, LOW);
+  //pinMode(RELAYSWITCH_PIN, OUTPUT);
+  //digitalWrite(RELAYSWITCH_PIN, LOW);
   Wire.begin();
   Serial.begin(9600);
   lcd.begin(16, 2);               // start the library
@@ -591,7 +583,7 @@ void setup()
   // set the initial time here:
   // DS3231 seconds, minutes, hours, day, date, month, year
   // setDS3231time(30,18,16,7,23,1,16);
-  // Serial.println("Hejehej");
+  lcd.cursor();
 }
 
 unsigned int counter = 0;
@@ -613,7 +605,6 @@ void loop()
 //  lcd.noCursor();
   //delay(300);
   // Turn on the cursor:
-  lcd.cursor();
 //  delay(300);
 
   if (counter >= 10000) {
