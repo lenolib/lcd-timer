@@ -1,6 +1,5 @@
 #include "Wire.h"
 #include <LiquidCrystal.h>
-#include "TimerOne.h"
 
 using namespace std;
 
@@ -22,6 +21,10 @@ int cursor_y = 0;
 #define DS3231_I2C_ADDRESS 0x68
 #define MAX_X 16
 #define MAX_Y 2
+#define MODE_TIMER_1 0
+#define MODE_TIMER_2 1
+#define MODE_CLOCKSET 2
+
 
 String active_text(bool state){
   if (state) {
@@ -160,7 +163,7 @@ void ClockMode::show() {
   // update_time();
   lcd.print(_text);
   String out_str = pad_number(_hour, "0", 2) + ":" +
-    pad_number(_minute, "0", 2);
+    pad_number(_minute, "0", 2) + " (set=exit)";
   set_cursor(0, 1);
   lcd.print(out_str);
   // set_cursor(_allowed_positions[internal_state], _row);
@@ -505,11 +508,11 @@ void switch_menu() {
   if (current_menu == 2) {
     Serial.println("Switch from 2");
     lcd.clear();
-    menus[0]->show();
-    menus[1]->show();
+    menus[MODE_TIMER_1]->show();
+    menus[MODE_TIMER_2]->show();
     current_menu = 0;
     menus[current_menu]->set_cursor_start_position();
-    write_t_to_rtc(menus[2]->get_min(), menus[2]->get_hr());
+    write_t_to_rtc(menus[MODE_CLOCKSET]->get_min(), menus[MODE_CLOCKSET]->get_hr());
   }
   else {
     current_menu = ++current_menu % 2;
@@ -570,7 +573,7 @@ void setup()
   timer1->set_cursor_start_position();
 
   //Retrieve time from RTC
-  menus[2]->update();
+  menus[MODE_CLOCKSET]->update();
   // set the initial time here:
   // DS3231 seconds, minutes, hours, day, date, month, year
   // setDS3231time(30,18,16,7,23,1,16);
@@ -588,7 +591,7 @@ void loop()
 
   // Stop updating clock when setting it.
   // if (current_menu != 2) {
-    // menus[2]->update();
+    // menus[MODE_CLOCKSET]->update();
   // }
 
   lcd_key = read_LCD_buttons();
@@ -602,7 +605,7 @@ void loop()
   if (counter >= 10000) {
     Serial.println("Updating Crock");
     if (current_menu != 2) {
-      menus[2]->update();
+      menus[MODE_CLOCKSET]->update();
       
   }
     counter = 0;
