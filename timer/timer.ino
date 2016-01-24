@@ -1,5 +1,6 @@
 #include "Wire.h"
 #include <LiquidCrystal.h>
+#include <EEPROM.h>
 
 using namespace std;
 
@@ -24,6 +25,16 @@ int cursor_y = 0;
 #define MODE_TIMER_1 0
 #define MODE_TIMER_2 1
 #define MODE_CLOCKSET 2
+
+#define RELAYSWITCH_PIN 12
+
+#define ONE_SPACE 1
+
+#define POS_HOUR_10 0
+#define POS_HOUR_1 1
+#define POS_MINUTE_10 3
+#define POS_MINUTE_1 4
+#define POS_STATE 6
 
 
 String active_text(bool state){
@@ -86,7 +97,7 @@ class Menu {
     unsigned int* _allowed_positions;
     unsigned int n_allowed;
     unsigned int _row;
-    unsigned int internal_state = 0;
+    unsigned int cursor_idx = 0;
     unsigned int _hour; 
     unsigned int _minute;
     virtual void show() = 0;
@@ -104,21 +115,22 @@ class Menu {
 };
 
 void Menu::left() {
-  internal_state = modulo((int)internal_state - 1, n_allowed);
-  int new_position = _allowed_positions[internal_state];
+  cursor_idx = modulo((int)cursor_idx - 1, n_allowed);
+  int new_position = _allowed_positions[cursor_idx];
   set_cursor(new_position, cursor_y);
 };
 void Menu::right() {
-  internal_state = modulo((int)internal_state + 1, n_allowed);
-  int new_position = _allowed_positions[internal_state];
+  cursor_idx = modulo((int)cursor_idx + 1, n_allowed);
+  int new_position = _allowed_positions[cursor_idx];
+  Serial.println("newpos:" + new_position);
   set_cursor(new_position, cursor_y);
 };
 
 void Menu::set_cursor_start_position() {
-  internal_state = 0;
+  cursor_idx = 0;
   Serial.println("menu set_cursor");
   Serial.println(_row);
-  set_cursor(_allowed_positions[internal_state], this->_row);
+  set_cursor(_allowed_positions[cursor_idx], this->_row);
 }
 
 unsigned int Menu::get_min() {
@@ -143,7 +155,7 @@ class ClockMode : public Menu {
 
 ClockMode::ClockMode() {
   _row = 1;
-  internal_state = 0;
+  cursor_idx = 0;
   n_allowed = 5;
   _hour = 0;
   _minute = 0;
@@ -166,12 +178,12 @@ void ClockMode::show() {
     pad_number(_minute, "0", 2) + " (set=exit)";
   set_cursor(0, 1);
   lcd.print(out_str);
-  // set_cursor(_allowed_positions[internal_state], _row);
-  set_cursor(_allowed_positions[internal_state], _row);
+  // set_cursor(_allowed_positions[cursor_idx], _row);
+  set_cursor(_allowed_positions[cursor_idx], _row);
 };
 
 void ClockMode::up() {
-  switch (internal_state) {
+  switch (cursor_idx) {
     case 0: {
       increment_value_10(&_hour, 24);
       break;
@@ -192,7 +204,7 @@ void ClockMode::up() {
 }
 
 void ClockMode::down() {
-  switch (internal_state) {
+  switch (cursor_idx) {
     case 0: {
       decrement_value_10(&_hour, 24);
       break;
@@ -254,17 +266,17 @@ class TimerMode : public Menu{
 TimerMode::TimerMode(String name, unsigned int row) {
   _row = row;
   _name = name;
-  unsigned int _cursor_start = _name.length() + 1;
+  unsigned int _cursor_start = _name.length() + ONE_SPACE;
   unsigned int n_allowed = 5;
   _active = false;
   _hour = 0;
   _minute = 0;
   _allowed_positions = new unsigned int[n_allowed];
-  _allowed_positions[0] = _cursor_start;
-  _allowed_positions[1] = _cursor_start + 1;
-  _allowed_positions[2] = _cursor_start + 3;
-  _allowed_positions[3] = _cursor_start + 4;
-  _allowed_positions[4] = _cursor_start + 6;
+  _allowed_positions[0] = _cursor_start + POS_HOUR_10;
+  _allowed_positions[1] = _cursor_start + POS_HOUR_1;
+  _allowed_positions[2] = _cursor_start + POS_MINUTE_10;
+  _allowed_positions[3] = _cursor_start + POS_MINUTE_1;
+  _allowed_positions[4] = _cursor_start + POS_STATE;
 };
 
 void TimerMode::show() {
@@ -273,7 +285,7 @@ void TimerMode::show() {
     pad_number(_hour, "0", 2) + ":" +
     pad_number(_minute, "0", 2) + " " + active_text(_active);
   lcd.print(out_str);
-  set_cursor(_allowed_positions[internal_state], _row);
+  set_cursor(_allowed_positions[cursor_idx], _row);
 }
 
 void TimerMode::toggle_timer() {
@@ -281,7 +293,7 @@ void TimerMode::toggle_timer() {
 }
 
 void TimerMode::up() {
-  switch (internal_state) {
+  switch (cursor_idx) {
     case 0: {
       increment_value_10(&_hour, 24);
       break;
@@ -306,7 +318,7 @@ void TimerMode::up() {
 }
 
 void TimerMode::down() {
-  switch (internal_state) {
+  switch (cursor_idx) {
     case 0: {
       decrement_value_10(&_hour, 24);
       break;
@@ -564,6 +576,8 @@ void setup()
 {
   // Timer1.initialize(10000000);         // initialize timer1, and set a 1/2 second period                // setup pwm on pin 9, 50% duty cycle
   // Timer1.attachInterrupt(checkClock);   // Set Timer ISR to update clock status
+  pinMode(RELAYSWITCH_PIN, OUTPUT);
+  digitalWrite(RELAYSWITCH_PIN, LOW);
   Wire.begin();
   Serial.begin(9600);
   lcd.begin(16, 2);               // start the library
@@ -593,7 +607,7 @@ void loop()
   // if (current_menu != 2) {
     // menus[MODE_CLOCKSET]->update();
   // }
-
+  //menus[MODE_TIMER_1]->
   lcd_key = read_LCD_buttons();
   handle_key_press(lcd_key);
 //  lcd.noCursor();
