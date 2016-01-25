@@ -29,6 +29,7 @@ bool is_triggered = false;
 #define MODE_CLOCKSET 2
 
 #define RELAYSWITCH_PIN 12
+#define BACKLIGHT_DIGITAL_PIN 10
 
 #define ONE_SPACE 1
 
@@ -38,7 +39,17 @@ bool is_triggered = false;
 #define POS_MINUTE_1 4
 #define POS_STATE 6
 
-#define CHECK_FREQ 10000
+#define LOOP_WORK_FREQ 10000
+
+#define TIMER_1_EEPROM_ADDRESS 0
+#define TIMER_2_EEPROM_ADDRESS 32
+
+#define EEPROM_OFFSET_HOUR 0
+#define EEPROM_OFFSET_MINUTE 1
+#define EEPROM_OFFSET_ONOFF_STATE 2
+
+#define CLOCKSETMENU_TIMEOUT 300000 //about half a minute @ 16Mhz
+#define BACKLIGHT_TIMEOUT 50000 //about 6 seconds @ 16Mhz
 
 String active_text(bool state){
   if (state) {
@@ -236,9 +247,11 @@ class TimerMode : public Menu{
   //unsigned int _allowed_positions[5];
 
   public:
-    TimerMode(String name, unsigned int row);
+    TimerMode(String name, unsigned int row, unsigned int eeprom_addr);
+    unsigned int _eeprom_addr;
     unsigned int get_n_allowed() { return 5; };
     void read_alarm_from_eeprom();
+    void write_alarm_to_eeprom();
     void show();
     // void set_cursor_start_position();
     void up();
@@ -255,10 +268,11 @@ class TimerMode : public Menu{
     //void decrement_value(&var);
 };
 
-TimerMode::TimerMode(String name, unsigned int row, unsigned int eeprom_addr "<-make this member") {
+TimerMode::TimerMode(String name, unsigned int row, unsigned int eeprom_addr) {
   _row = row;
   _name = name;
   unsigned int _cursor_start = _name.length() + ONE_SPACE;
+  _eeprom_addr = eeprom_addr;
   active = false;
   _hour = 0;
   _minute = 0;
@@ -271,9 +285,16 @@ TimerMode::TimerMode(String name, unsigned int row, unsigned int eeprom_addr "<-
 };
 
 
-void read_alarm_from_eeprom() {
-  _hour = EEEPROM.read(...h);
-  _minute = EEEPROM.read(...);
+void TimerMode::read_alarm_from_eeprom() {
+  _hour = EEPROM.read(_eeprom_addr + EEPROM_OFFSET_HOUR);
+  _minute = EEPROM.read(_eeprom_addr + EEPROM_OFFSET_MINUTE);
+  active = EEPROM.read(_eeprom_addr + EEPROM_OFFSET_ONOFF_STATE);
+}
+
+void TimerMode::write_alarm_to_eeprom() {
+  EEPROM.write(_eeprom_addr + EEPROM_OFFSET_HOUR,         _hour);
+  EEPROM.write(_eeprom_addr + EEPROM_OFFSET_MINUTE,       _minute);
+  EEPROM.write(_eeprom_addr + EEPROM_OFFSET_ONOFF_STATE,  active);
 }
 
 
@@ -313,7 +334,7 @@ void TimerMode::up() {
       break;
     }
   }
-
+  this->write_alarm_to_eeprom();
 }
 
 void TimerMode::down() {
@@ -339,6 +360,7 @@ void TimerMode::down() {
       break;
     }
   }
+  this->write_alarm_to_eeprom();
 }
 
 void readDS3231time(
@@ -439,8 +461,8 @@ void decrement_value_1(unsigned int *var, byte max_val) {
   *var = modulo((*var - 1), max_val);
 }
 
-Menu* timer1 = new TimerMode("1:", 0);
-Menu* timer2 = new TimerMode("2:", 1);
+Menu* timer1 = new TimerMode("1:", 0, TIMER_1_EEPROM_ADDRESS);
+Menu* timer2 = new TimerMode("2:", 1, TIMER_2_EEPROM_ADDRESS);
 Menu* clock_ = new ClockMode();
 Menu *menus[] = {timer1, timer2, clock_};
 
@@ -448,7 +470,6 @@ void switch_menu() {
   int t0 = readSecond();
   while (analogRead(0) < 1000) {
     if (abs(t0 - readSecond()) > 2) {
-      Serial.println("Swtich to 2");
       current_menu = 2;
       lcd.clear();
       menus[current_menu]->show();
@@ -456,7 +477,6 @@ void switch_menu() {
     }
   }
   if (current_menu == 2) {
-    Serial.println("Switch from 2");
     lcd.clear();
     menus[MODE_TIMER_1]->show();
     menus[MODE_TIMER_2]->show();
@@ -511,6 +531,7 @@ void setup()
   // Timer1.initialize(10000000);         // initialize timer1, and set a 1/2 second period                // setup pwm on pin 9, 50% duty cycle
   // Timer1.attachInterrupt(checkClock);   // Set Timer ISR to update clock status
   pinMode(RELAYSWITCH_PIN, OUTPUT);
+  //pinMode(BACKLIGHT_DIGITAL_PIN, OUTPUT); //TODO turn me on
   digitalWrite(RELAYSWITCH_PIN, LOW);
   Wire.begin();
   Serial.begin(9600);
@@ -519,8 +540,8 @@ void setup()
   set_cursor(0,0);             // set the LCD cursor   position
 
   // Read alarms from EEPROM
-  timer1->read_alarm_from_eeprom(...)
-  timer2->read_alarm_from_eeprom(...)
+  static_cast<TimerMode*>(timer1)->read_alarm_from_eeprom();
+  static_cast<TimerMode*>(timer2)->read_alarm_from_eeprom();
 
   timer1->show();
   timer2->show();
@@ -545,6 +566,7 @@ void loop_work() {
   if (current_menu != MODE_CLOCKSET) {
     menus[MODE_CLOCKSET]->set_time_from_rtc();
   }
+
   bool alarm_1 = should_alarm_trigger(MODE_TIMER_1);
   bool alarm_2 = should_alarm_trigger(MODE_TIMER_2);
   if (alarm_1 or alarm_2) {
@@ -558,6 +580,14 @@ void loop_work() {
   }
 }
 
+void turn_backlight_off() {
+  digitalWrite(BACKLIGHT_DIGITAL_PIN, LOW);
+}
+
+void turn_backlight_on() {
+  digitalWrite(BACKLIGHT_DIGITAL_PIN, HIGH);
+}
+
 void trigger_relayswitch() {
   Serial.println("Triggered");
   digitalWrite(RELAYSWITCH_PIN, HIGH);
@@ -565,17 +595,39 @@ void trigger_relayswitch() {
   digitalWrite(RELAYSWITCH_PIN, LOW);
 }
 
-
+unsigned long int clockset_timeout_counter = 0;
 unsigned int counter = 0;
+unsigned long int backlight_timeout_counter = 0;
 
 void loop()
 {
   counter ++;
+  backlight_timeout_counter++;
+  if ( backlight_timeout_counter > BACKLIGHT_TIMEOUT ) {
+    turn_backlight_off();
+  }
+
+  if (current_menu == MODE_CLOCKSET) {
+    clockset_timeout_counter++;
+    if (clockset_timeout_counter > CLOCKSETMENU_TIMEOUT) {
+      clockset_timeout_counter = 0;
+      switch_menu();
+    }
+
+  } else {
+    clockset_timeout_counter = 0;
+  }
+
 
   lcd_key = read_LCD_buttons();
+  if (lcd_key != btnNONE) {
+    clockset_timeout_counter = 0;
+    backlight_timeout_counter = 0;
+    turn_backlight_on();
+  }
   handle_key_press(lcd_key);
 
-  if (counter >= CHECK_FREQ) {
+  if (counter >= LOOP_WORK_FREQ) {
     loop_work();
     counter = 0;
   }
